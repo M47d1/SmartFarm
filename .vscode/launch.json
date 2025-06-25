@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/test/Documents/ProjekWEB/IOT",
+      "program": "/Users/test/Documents/ProjekWEB/IOT/build/Debug/outDebug"
+    }
+  ]
+}

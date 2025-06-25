@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SmartFarm Monitoring</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+  <style>
+    html.dark, body.dark {
+      background-color: #1a202c !important;
+      color: #e2e8f0;
+    }    
+    body { font-family: 'Poppins', sans-serif; }
+    /* Toggle switch styling */
+    .toggle-checkbox:checked {
+      @apply bg-green-600;
+    }
+    .toggle-checkbox:checked + span::before {
+      transform: translateX(1.5rem);
+    }
+    .toggle-checkbox {
+      transition: background-color 0.2s ease-in-out;
+    }
+    .toggle-checkbox::before {
+      content: '';
+      position: absolute;
+      left: 0.25rem;
+      top: 0.25rem;
+      width: 1rem;
+      height: 1rem;
+      background-color: white;
+      border-radius: 9999px;
+      transition: transform 0.2s ease-in-out;
+    }
+
+    /* Dark Mode Styles */
+    .dark {
+      background-color: #1a202c; /* Dark background for body */
+      color: #e2e8f0; /* Light text color for body */
+    }
+
+    .dark .bg-gray-100 {
+        background-color: #1a202c; /* Ensure body background stays dark */
+    }
+    .dark .bg-white {
+      background-color: #2d3748; /* Darker background for cards */
+      color: #e2e8f0; /* Light text for cards */
+    }
+
+    /* Ensure specific text colors are light in dark mode */
+    .dark .text-gray-800 { color: #e2e8f0; }
+    .dark .text-gray-700 { color: #cbd5e0; }
+    .dark .text-gray-600 { color: #a0aec0; }
+    .dark .text-gray-500 { color: #718096; }
+    .dark .text-blue-700 { color: #90cdf4; } /* Adjusted for visibility in dark mode */
+    .dark .text-red-600 { color: #fc8181; } /* Adjusted for visibility in dark mode */
+    .dark .text-green-700 { color: #68d391; } /* Adjusted for visibility in dark mode */
+
+
+    /* Footer specific dark mode */
+    .dark .bg-gray-200 { background-color: #4a5568; }
+    .dark .shadow-inner { box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.6); }
+
+    /* Chart specific dark mode adjustments handled in JS */
+  </style>
+</head>
+<body class="min-h-screen flex flex-col transition-colors duration-300">
+
+  <header class="bg-green-700 text-white p-4 text-center rounded-b-xl shadow-md">
+    <h1 class="text-3xl font-bold">Smart Farm</h1>
+    <p class="text-sm mt-1">Monitoring Suhu & Kelembaban Tanah + Penyiraman</p>
+  </header>
+
+  <nav class="flex justify-center gap-4 mt-4">
+    <button onclick="tampilkanHalaman('home')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow">Beranda</button>
+    <button onclick="tampilkanHalaman('history')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow">Riwayat</button>
+    <button onclick="tampilkanHalaman('about')" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg shadow">Tentang</button>
+    <button id="darkModeToggle" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg shadow">
+      <i class="fas fa-moon"></i>
+    </button>
+  </nav>
+
+  <main class="flex-grow p-4">
+    <div id="home">
+      <div class="bg-white rounded-xl shadow-md p-4 mb-4">
+        <canvas id="kelembabanChart"></canvas>
+        <canvas id="suhuChart" class="mt-6"></canvas>
+        <div id="alertBox" class="mt-4 hidden"></div>
+        <p class="mt-4 font-medium">Status Penyiraman: <span id="statusPenyiraman" class="font-bold text-green-700">Memuat...</span></p>
+        <p class="mt-2 font-medium">Suhu Saat Ini: <span id="nilaiSuhu" class="font-bold text-red-600">Memuat...</span> °C</p>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-md p-4 mb-6 flex items-center justify-between max-w-md mx-auto">
+        <label for="modeSwitch" class="font-semibold text-gray-700">Mode Penyiraman:</label>
+        <div class="flex items-center space-x-2">
+          <span class="text-sm font-medium text-gray-600 flex items-center"><i class="fas fa-hand-paper mr-1"></i>Manual</span>
+          <input type="checkbox" id="modeSwitch" class="toggle-checkbox w-12 h-6 rounded-full bg-gray-300 appearance-none cursor-pointer checked:bg-green-600 relative transition duration-200 ease-in-out" />
+          <span class="text-sm font-medium text-gray-600 flex items-center">Otomatis<i class="fas fa-robot ml-1"></i></span>
+        </div>
+      </div>
+
+      <div id="manualControls" class="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
+        <button id="btnOn" onclick="kontrol('ON')" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-bold shadow">Nyalakan Penyiraman</button>
+        <button id="btnOff" onclick="kontrol('OFF')" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-bold shadow">Matikan Penyiraman</button>
+      </div>
+    </div>
+
+    <div id="history" class="hidden">
+      <div class="bg-white rounded-xl shadow-md p-4 mb-6">
+        <h2 class="text-lg font-semibold mb-2 text-blue-700">Riwayat Kelembaban</h2>
+        <ul id="riwayatKelembaban" class="list-disc pl-5 text-sm text-gray-700 max-h-48 overflow-auto"></ul>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-md p-4 mb-6">
+        <h2 class="text-lg font-semibold mb-2 text-blue-700">Riwayat Suhu</h2>
+        <ul id="riwayatSuhu" class="list-disc pl-5 text-sm text-gray-700 max-h-48 overflow-auto"></ul>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-md p-4">
+        <h2 class="text-lg font-semibold mb-2 text-blue-700">Riwayat Kontrol Pompa</h2>
+        <ul id="riwayatKontrol" class="list-disc pl-5 text-sm text-gray-700 max-h-48 overflow-auto"></ul>
+      </div>
+    </div>
+
+    <div id="about" class="p-4 hidden">
+      <div class="bg-white rounded-xl shadow-md p-4">
+        <h2 class="text-xl font-semibold mb-4">Tentang Developer</h2>
+        <p><strong>Nama:</strong> Fiqro Najiah, Zainul Majdi, Nanang Alifian Rizky Fakhroni.</p>
+        <p class="mt-2 text-justify">
+          <span class="font-bold">SmartFarm</span> adalah sistem monitoring kelembaban tanah, suhu, dan otomatisasi penyiraman—dikembangkan sebagai tugas besar IoT, Teknik Informatika, Universitas Mataram, 2025.
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="bg-gray-200 text-center text-sm text-gray-700 py-4 rounded-t-xl shadow-inner">
+    <p>Made with <span class="text-red-500 text-lg">❤️</span> by <strong>Fiqro, Majdi, Nanang</strong></p>
+    <p class="mt-1 text-gray-500">SmartFarm | 2025</p>
+  </footer>
+
+  <script>
+    const firebaseConfig = { //firebase
+      apiKey: "AIzaSyCgU9rslKJw-XTekSOm9iR0LTLSp2UBapQ",
+      authDomain: "smartfarm-eae67.firebaseapp.com",
+      databaseURL: "https://smartfarm-eae67-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "smartfarm-eae67",
+      storageBucket: "smartfarm-eae67.appspot.com",
+      messagingSenderId: "58071856830",
+      appId: "1:58071856830:web:fec73062e2f27bd72510ef",
+      measurementId: "G-1Z03LE11PP"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Charts setup
+    const waktuLabels = [], dataKelembaban = [];
+    const ctx = document.getElementById('kelembabanChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: waktuLabels,
+        datasets: [{
+          label: 'Kelembaban (%)',
+          data: dataKelembaban,
+          borderColor: '#1b4332',
+          backgroundColor: '#74c69d33',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { color: '#e2e8f0' }
+          },
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { color: '#e2e8f0' }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: { color: '#e2e8f0' }
+          }
+        }
+      }
+    });
+
+    const waktuSuhuLabels = [], dataSuhu = [];
+    const suhuCtx = document.getElementById('suhuChart').getContext('2d');
+    const suhuChart = new Chart(suhuCtx, {
+      type: 'line',
+      data: {
+        labels: waktuSuhuLabels,
+        datasets: [{
+          label: 'Suhu (\u00b0C)',
+          data: dataSuhu,
+          borderColor: '#d00000',
+          backgroundColor: '#ffb3b3',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 60,
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { color: '#e2e8f0' }
+          },
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { color: '#e2e8f0' }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: { color: '#e2e8f0' }
+          }
+        }
+      }
+    });
+
+    let currentKelembaban = 0, currentSuhu = 0, pompaStatus = null;
+    let modeOtomatis = true; // default mode otomatis
+
+    // Ambil status mode dari Firebase saat awal load
+    db.ref('mode').once('value').then(snap => {
+      const mode = snap.val();
+      modeOtomatis = (mode === 'otomatis');
+      modeSwitch.checked = modeOtomatis;
+      if(modeOtomatis) {
+        manualControls.classList.add('hidden');
+        autoControlPompa();
+      } else {
+        manualControls.classList.remove('hidden');
+      }
+    }).catch(err => {
+      // Jika error atau tidak ada data mode, default ke otomatis
+      modeOtomatis = true;
+      modeSwitch.checked = true;
+      manualControls.classList.add('hidden');
+    });
+
+    // Firebase listeners
+    db.ref('kelembaban').on('value', snap => {
+      const val = snap.val(), time = new Date().toLocaleTimeString();
+      currentKelembaban = val;
+      waktuLabels.push(time);
+      dataKelembaban.push(val);
+      if (waktuLabels.length > 10) {
+        waktuLabels.shift(); dataKelembaban.shift();
+      }
+      chart.update();
+      if(modeOtomatis) autoControlPompa();
+    });
+
+    db.ref('suhu').on('value', snap => {
+      const val = snap.val(), time = new Date().toLocaleTimeString();
+      currentSuhu = val;
+      document.getElementById('nilaiSuhu').textContent = val?.toFixed?.(1) || '—';
+      waktuSuhuLabels.push(time);
+      dataSuhu.push(val);
+      if (waktuSuhuLabels.length > 10) {
+        waktuSuhuLabels.shift(); dataSuhu.shift();
+      }
+      suhuChart.update();
+      if(modeOtomatis) autoControlPompa();
+    });
+
+    db.ref('status_penyiraman').on('value', snap => {
+      document.getElementById('statusPenyiraman').textContent = snap.val();
+    });
+
+    // Kontrol manual
+    async function kontrol(state) {
+      if (modeOtomatis) {
+        alert('Mode otomatis aktif. Matikan mode otomatis dulu untuk kontrol manual.');
+        return;
+      }
+      try {
+        btnOn.disabled = btnOff.disabled = true;
+        state === 'ON' ? btnOn.textContent = 'Loading…' : btnOff.textContent = 'Loading…';
+        await db.ref('kontrol').set(state);
+        const time = new Date().toLocaleTimeString();
+        await db.ref('log_kontrol').push({ waktu: time, aksi: state });
+      } catch (err) {
+        alert('Gagal kirim kontrol: ' + err.message);
+      } finally {
+        btnOn.disabled = btnOff.disabled = false;
+        btnOn.textContent = 'Nyalakan Penyiraman';
+        btnOff.textContent = 'Matikan Penyiraman';
+      }
+    }
+
+    function autoControlPompa() {
+      const alertBox = document.getElementById('alertBox');
+      if (modeOtomatis && currentSuhu > 45 && currentKelembaban < 30 && pompaStatus !== 'ON') {
+        db.ref('kontrol').set('ON');
+        db.ref('status_penyiraman').set('Aktif');
+        alertBox.textContent = "🔥 Suhu tinggi & tanah kering! Pompa otomatis dinyalakan.";
+        alertBox.className = "mt-4 p-4 text-sm bg-red-600 text-white font-bold text-center rounded-lg shadow";
+        alertBox.classList.remove('hidden');
+        pompaStatus = 'ON';
+      } else if (modeOtomatis && currentKelembaban >= 60 && pompaStatus !== 'OFF') {
+        db.ref('kontrol').set('OFF');
+        db.ref('status_penyiraman').set('Nonaktif');
+        alertBox.textContent = "✅ Tanah cukup lembab. Pompa dimatikan otomatis.";
+        alertBox.className = "mt-4 p-4 text-sm bg-green-600 text-white font-bold text-center rounded-lg shadow";
+        alertBox.classList.remove('hidden');
+        pompaStatus = 'OFF';
+      } else if (modeOtomatis && currentKelembaban >= 30 && currentKelembaban < 60 && currentSuhu <= 45) {
+        alertBox.classList.add('hidden');
+      }
+    }
+
+    // UI elements
+    const modeSwitch = document.getElementById('modeSwitch');
+    const manualControls = document.getElementById('manualControls');
+    const btnOn = document.getElementById('btnOn');
+    const btnOff = document.getElementById('btnOff');
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const body = document.body;
+
+    // Function to update chart colors based on theme
+    function updateChartColors(isDarkMode) {
+        const textColor = isDarkMode ? '#e2e8f0' : '#4a5568';
+        const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
+        // Update global defaults for charts
+        Chart.defaults.color = textColor;
+        Chart.defaults.borderColor = gridColor;
+
+        // Update Kelembaban Chart
+        chart.options.scales.y.ticks.color = textColor;
+        chart.options.scales.x.ticks.color = textColor;
+        chart.options.scales.y.grid.color = gridColor;
+        chart.options.scales.x.grid.color = gridColor;
+        chart.options.plugins.legend.labels.color = textColor;
+        chart.update();
+
+        // Update Suhu Chart
+        suhuChart.options.scales.y.ticks.color = textColor;
+        suhuChart.options.scales.x.ticks.color = textColor;
+        suhuChart.options.scales.y.grid.color = gridColor;
+        suhuChart.options.scales.x.grid.color = gridColor;
+        suhuChart.options.plugins.legend.labels.color = textColor;
+        suhuChart.update();
+    }
+
+
+    // Mode switch listener: update mode in Firebase & UI
+    modeSwitch.addEventListener('change', () => {
+      modeOtomatis = modeSwitch.checked;
+      const modeValue = modeOtomatis ? 'otomatis' : 'manual';
+      db.ref('mode').set(modeValue).catch(e => console.error('Gagal update mode:', e));
+      if(modeOtomatis) {
+        manualControls.classList.add('hidden');
+        autoControlPompa(); // Trigger auto control when switching to automatic
+      } else {
+        manualControls.classList.remove('hidden');
+        document.getElementById('alertBox').classList.add('hidden');
+        // Optionally, turn off pump when switching from auto to manual if it was on automatically
+        // if (pompaStatus === 'ON') { db.ref('kontrol').set('OFF'); db.ref('status_penyiraman').set('Nonaktif'); }
+      }
+    });
+
+    // Dark mode toggle listener
+    darkModeToggle.addEventListener('click', () => {
+      body.classList.toggle('dark');
+      const isDarkMode = body.classList.contains('dark');
+      darkModeToggle.innerHTML = isDarkMode ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+      localStorage.setItem('darkMode', isDarkMode);
+      updateChartColors(isDarkMode); // Update chart colors immediately
+    });
+
+    // Check for dark mode preference on load
+    const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+    if (savedDarkMode) {
+      body.classList.add('dark');
+      darkModeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+    } else {
+      body.classList.remove('dark'); // Ensure it's not dark if preference is false/null
+      darkModeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+    }
+    updateChartColors(savedDarkMode); // Initialize chart colors based on saved preference
+
+
+    // Navigation
+    function tampilkanHalaman(id) {
+      ['home','history','about'].forEach(h => {
+        document.getElementById(h).classList.toggle('hidden', h !== id);
+      });
+    }
+
+    // Fetch riwayat data for History page
+    function updateRiwayat() {
+      // Get current theme to adjust list item text color if needed, or rely on global CSS
+      const currentTextColor = body.classList.contains('dark') ? '#e2e8f0' : '#4a5568'; // Example, adjust as needed
+
+      db.ref('log_kelembaban').limitToLast(10).once('value').then(snap => {
+        const list = document.getElementById('riwayatKelembaban');
+        list.innerHTML = '';
+        snap.forEach(childSnap => {
+          const val = childSnap.val();
+          const li = document.createElement('li');
+          li.textContent = `${val.waktu} - ${val.nilai}%`;
+          li.style.color = currentTextColor; // Apply text color
+          list.appendChild(li);
+        });
+      });
+      db.ref('log_suhu').limitToLast(10).once('value').then(snap => {
+        const list = document.getElementById('riwayatSuhu');
+        list.innerHTML = '';
+        snap.forEach(childSnap => {
+          const val = childSnap.val();
+          const li = document.createElement('li');
+          li.textContent = `${val.waktu} - ${val.nilai} °C`;
+          li.style.color = currentTextColor; // Apply text color
+          list.appendChild(li);
+        });
+      });
+      db.ref('log_kontrol').limitToLast(10).once('value').then(snap => {
+        const list = document.getElementById('riwayatKontrol');
+        list.innerHTML = '';
+        snap.forEach(childSnap => {
+          const val = childSnap.val();
+          const li = document.createElement('li');
+          li.textContent = `${val.waktu} - ${val.aksi}`;
+          li.style.color = currentTextColor; // Apply text color
+          list.appendChild(li);
+        });
+      });
+    }
+
+    // Update history data when History tab selected
+    document.querySelector('nav').addEventListener('click', e => {
+      if(e.target.tagName === 'BUTTON' && e.target.textContent.includes('Riwayat')) {
+        updateRiwayat();
+      }
+    });
+  </script>
+</body>
+</html>
